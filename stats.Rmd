@@ -1,0 +1,771 @@
+---
+title: "The ionomics of lettuce infected by *Xanthomonas campestris* pv. *vitians*"
+output: html_notebook
+---
+
+This notebook contains the necessary computations for the statistics of the paper *The ionomics of lettuce infected by *Xanthomonas campestris* pv. *vitians*.
+
+# Load libraries
+
+Some packages need to be loaded to perform the full analysis.
+
+```{r results='hide'}
+library("tidyverse")
+library("cowplot")
+library("grid")
+library("nlme") # to compute experimental random effects
+library("ade4") # linear discriminant analysis
+library("vegan") # redundancy analysis
+library("mvoutlier") # remove outliers, sign2 function
+library("compositions") # ilr
+library("ellipse") # ellipses in plots
+library("plyr")
+```
+
+Other functions are placed in the `lib` folder.
+
+```{r}
+source("lib/plotDA_1.3.R") # plot LDA needs packages ggplot2, grid, ellipse and plyr
+source("lib/ilrDefinition_1.2.R") # define balances
+source("lib/codadend2.R") # coda dendrogram with extra features
+```
+
+# Load and prepare data
+
+The main data set is placed in file `data.csv`. The data set `sensib.csv` is a table relating cultivars and their degree of sensibility to *Xanthomonas campestris* infection.
+
+```{r}
+data <- read.csv(file = "data/data.csv", sep = ";", dec = ".")
+sensibility <- read.csv("data/sensib.csv", sep = ";")
+```
+
+Sensibility factors must be ordered.
+
+```{r}
+sensibility$Niv..de.sens. <- factor(sensibility$Niv..de.sens.,
+                                    levels = c("Susceptible",
+                                               "Intermediate",
+                                               "Tolerant"), 
+                                    ordered = TRUE)
+```
+
+Experiments are indeed factors, not numeric. Treatments (the `Trait` column) are renamed.
+
+```{r}
+data$Experience <- factor(data$Experience)
+data$Trait <- factor(ifelse(data$Trait == "inoc", "Infected", "Uninfected"))
+```
+
+Nitrogen is absent from `data.csv`. We can add it from the ionomic data set.
+
+```{r}
+data_N <- read.csv(file = "data/analyse_chimique_laitue_all.csv", sep = ";", dec = ",", 
+                   encoding = "UTF-8")
+data_N$Trait <- factor(ifelse(data_N$Trait == "inoc", "Infected", "Uninfected"))
+colnames(data_N)[1] <- "Cultivars"
+
+data$N <- NA
+for (i in 1:nrow(data_N)) {
+  cultivar_i <- data_N$Cultivars[i]
+  trait_i <- data_N$Trait[i]
+  N_i <- data_N$N[i]
+  data$N[data$Cultivars == cultivar_i & data$Trait == trait_i] <- N_i
+}
+if (mean(data$N) < 1000) data$N <- data$N * 1000
+```
+
+
+# Compositional data transformations
+
+The `parts` matrix contains the elements of the simplex. I'm adding `Fv`, the filling value (elements other than those measured in the ionome, mainly C, O and H). The `acomp` function closes all lines to a constant sum of 1.
+
+```{r results='hide'}
+parts <- data[, -c(1, 2, 3, 4, 15)]
+parts$Fv <- 1e+06 - rowSums(parts)
+comp <- acomp(parts)
+```
+
+Balances are computed according to a schema encoded in a sequential binary partition (SBP). The names of the balances are defined in `ilrDef` as `[list of denominator components | list numerator components]`.
+
+```{r results='hide'}
+sbp <- read.csv(file = "data/sbp_sansAl.csv", sep = ";", dec = ".", header = TRUE)
+ilrDef <- ilrDefinition(sbp = sbp, side = "-+")  # balance definitions from sbp
+ilrDef[1] <- "[Fv | nutrients]"
+ilrDef[2] <- "[oligo | macro]"
+ilrNo <- paste0("ilr", 1:nrow(sbp))  # ilr number (shorter column name if needed)
+bal <- ilr(comp, V = gsi.buildilrBase(t(sbp)))  # calculer les balances
+colnames(bal) <- ilrDef
+CoDaDendrogram(comp, V = gsi.buildilrBase(t(sbp)))
+```
+
+The following chunk creates a coda dendrorgam figure showing how balances are created in the sbp.
+
+```{r results='hide'}
+comp_dummy <- matrix(1L, nrow = 5, ncol = ncol(comp))
+colnames(comp_dummy) <- colnames(comp)
+png("images/codadend_schema.png", width = 1500, height = 1000, res = 300)
+par(mar = c(3, 0, 0, 0))
+CoDaDendrogram2(comp_dummy, V = gsi.buildilrBase(t(sbp)), show.range = F, equal.height = TRUE)
+dev.off()
+```
+
+
+# Data exploration
+
+A vector color blind - friendly colors, as suggested by [colorbrewer2.org](http://colorbrewer2.org/#type=diverging&scheme=PuOr&n=3) for each experiment.
+
+```{r}
+couleurs <- as.character(factor(data$Experience, levels = c(1, 2, 3), 
+                                labels = c(rgb(241/255, 163/255, 64/255, 0.7),
+                                           rgb(247/255, 247/255, 247/255, 0.7),
+                                           rgb(153/255, 142/255, 195/255, 0.7))))
+```
+
+A pairs plot can be used to explore experimental effects.
+
+```{r fig.height=7, fig.width=7}
+pairs(bal, bg = couleurs, pch = 21, cex = 1, upper.panel = NULL)
+par(xpd = TRUE)
+legend(0.8, 0.8, legend = c("Experiment 1", "Experiment 2", "Experiment 3"), fill = unique(couleurs))
+```
+
+There is a clear random experimental effect. The [Mn | Zn,Cu] balance is clearly discriminant. A linear discriminant analysis could be used for a more condensed appreciation.
+
+
+```{r}
+group <- data$Experience
+meta_group <- data$Trait
+pca <- dudi.pca(unclass(bal), scannf = FALSE, scale = FALSE) # ilrs are already scaled in the Aitchison geometry
+lda <- discrimin(pca, group, scannf = FALSE)
+```
+
+The densities also show this effect.
+
+
+```{r fig.height=4, fig.width=15}
+ggdf <- data.frame(data[, c(1, 3, 15)], bal)
+colnames(ggdf)[grepl("X.", colnames(ggdf))] <- ilrDef
+ggdf <- ggdf %>%
+  gather(variable, balance, -Cultivars, -Trait, -Experience)
+ggdf %>%
+  ggplot(aes(x = balance)) + 
+  facet_grid(Trait ~ variable, scales = "free") + 
+  geom_density(aes(fill = Experience)) +
+  scale_fill_manual(values = unique(couleurs)) + 
+  xlab("Balance") +
+  ylab("Density") +
+  theme_bw()
+```
+
+The `plotDA` custom function is used for publishable-ready plots.
+
+```{r results='hide'}
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.8, 
+       facname = "Experiment", groupfacname = "Group") + scale_fill_manual(values = unique(couleurs)) + 
+  theme_bw()
+ggsave(filename = "images/LDA-Experience.png", width = 7, height = 7, dpi = 300)
+```
+
+# Remove the experimental effect
+
+In order to remove the experimental effect, I compute a mixed model for each ilr as response and, as features, the interacting cultivar and  treatment as fixed effects and the experiment as random effect.
+
+```{r}
+mmdf <- data.frame(data[, c(1, 3, 15)], bal)  # mmdf: mixed-model dataframe
+colnames(mmdf)[4:14] <- ilrNo
+mm_detrend <- list()
+for (i in ilrNo) {
+  fixed_formula <- as.formula(paste0(i, " ~ Cultivars * Trait"))
+  mm_detrend[[i]] <- lme(mmdf, fixed = fixed_formula, random = ~1 | Experience)
+}
+```
+
+For curiosity, I compute an anova to test if cultivars and treatment has an effect on ilrs.
+
+```{r}
+for (i in seq_along(mm_detrend)) {
+  print(ilrDef[i])
+  print(anova(mm_detrend[[i]], type = "marginal"))
+}
+```
+
+
+- **Cultivars**. For all ilrs except 1, the no effect hypothesis is rejected at 0.05 level.
+- **Treatment**. For most ilrs, the no effect hypothesis is rejected at 0.05 level
+- **Cultivars:Trait**, i.e. interaction. For most ilrs, the no effect hypothesis is not rejected at 0.05 level
+
+There might be a global effect for both cultivar and treatment, but the interaction between both is unlikely.
+
+Back to the real purpose of this section: remove the experiment random effect on ilrs,
+
+```{r}
+bal_detrend <- data.frame(matrix(ncol = ncol(bal), nrow = nrow(bal)))  # new detrended table (currently empty)
+colnames(bal_detrend) <- ilrDef
+for (i in 1:ncol(bal_detrend)) {
+  for (j in 1:nrow(ranef(mm_detrend[[i]]))) {
+    bal_detrend[mmdf$Experience == rownames(ranef(mm_detrend[[i]]))[j], i] <- 
+      mmdf[mmdf$Experience == rownames(ranef(mm_detrend[[i]]))[j], 3 + i] - ranef(mm_detrend[[i]])[j, ]
+  }
+}
+```
+
+
+It is useful to plot the results. In the next chunk I'm creating a table amenable to plotting.
+
+```{r}
+mmdf_detrend <- data.frame(data[, c(1, 3, 15)], bal_detrend)
+colnames(mmdf_detrend)[4:14] <- ilrDef
+ggdf_detrend <- gather(mmdf_detrend, variable, balance, -Cultivars, -Trait, -Experience)
+ggdf_detrend$Trait <- as.character(ggdf_detrend$Trait)
+ggdf_detrend$Trait[ggdf_detrend$Trait == "Infected"] <- "Infected\ndetrended"
+ggdf_detrend$Trait[ggdf_detrend$Trait == "Uninfected"] <- "Uninfected\ndetrended"
+
+ggdf_trend <- rbind(ggdf, ggdf_detrend)
+levels(ggdf_trend$Trait)[c(1, 2)] <- c("Infected\noriginal", "Uninfected\noriginal")
+ggdf_trend$Trait <- factor(ggdf_trend$Trait, levels = c("Infected\noriginal", "Infected\ndetrended", 
+                                                        "Uninfected\noriginal", "Uninfected\ndetrended"))
+```
+
+Now I'm plotting densities of balances of trended and detrended by infected / uninfected.
+
+```{r fig.height=4, fig.width=15}
+ggplot(data = ggdf_trend, aes(x = balance)) + 
+  facet_grid(Trait ~ variable, scales = "free") + 
+  geom_density(aes(fill = Experience)) + 
+  scale_fill_manual(values = unique(couleurs)) + 
+  xlab("Balance value") + ylab("Density") +
+  theme_bw()
+ggsave(filename = "images/Densité-Experience--detrended.png", width = 16,
+       height = 4, dpi = 300)
+```
+
+The linear discriminant analysis across detrended balances.
+
+```{r results='hide'}
+group <- data$Experience
+meta_group <- data$Trait
+pca <- dudi.pca(unclass(bal_detrend), scannf = FALSE, scale = FALSE)
+lda <- discrimin(pca, group, scannf = FALSE)
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.8, 
+       facname = "Experiment", groupfacname = "Group") + scale_fill_manual(values = unique(couleurs)) + 
+  theme_bw()
+```
+
+To end this section, I back-transform detrended ilrs to compositions.
+
+```{r results='hide'}
+comp_detrend <- ilrInv(bal_detrend, V = gsi.buildilrBase(t(sbp)))
+```
+
+
+# Outliers
+
+Outliers are removed in the ilr space, with a permissive criterion of `qcrit = 0.9995`. The `io` vector is `TRUE` for inliers and `FALSE` for outliers.
+
+```{r}
+io <- sign2(bal_detrend, qcrit = 0.9995)$wfinal01 == 1
+print(paste("number of outliers =", sum(!io)))
+print(paste("percentage of outliers =", 100 * sum(!io)/length(io), "%"))
+```
+
+## Explore date without outliers
+
+Densities of infected and uninfected cultivar ionomes.
+
+```{r fig.height=4, fig.width=15}
+cbind(group = group[io], 
+      treatment=data$Trait[io], 
+      bal_detrend[io, ]) %>%
+  gather(variable, balance, -group, -treatment) %>% 
+  ggplot(aes(x = balance)) + 
+    facet_grid(treatment ~ variable, scales = "free") + 
+    geom_density(aes(fill = group), alpha = 0.5) +
+    theme_bw()
+```
+
+Linear discriminant analysis with cultivars as grouping factor, on detrended without outliers.
+
+```{r results='hide'}
+mmdf <- left_join(mmdf, sensibility, by = "Cultivars")
+mmdf_detrend <- left_join(mmdf_detrend, sensibility, by = "Cultivars")
+
+# LDA
+group <- mmdf_detrend$Cultivars[io]
+pca <- dudi.pca(bal_detrend[io, ], scannf = FALSE, scale = FALSE)
+lda <- discrimin(pca, group, scannf = FALSE)
+rownames(lda$fa) <- ilrDef
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Cultivar", 
+       groupfacname = "Group") + theme_bw()
+ggsave(filename = "images/LDA-detrend-tout.png", width = 8, height = 8, dpi = 300)
+```
+
+LDA on Uninfected only.
+
+**Note**: The filling value balance is highly discriminant. Removing the filling value balance makes the LDA blobs not so alligned vertically.
+
+
+```{r results='hide'}
+group <- mmdf_detrend$Cultivars[data$Trait == "Uninfected" & io]
+pca <- dudi.pca(bal_detrend[data$Trait == "Uninfected" & io, -1], scannf = FALSE, scale = FALSE)
+lda <- discrimin(pca, group, scannf = FALSE)
+rownames(lda$fa) <- ilrDef[-1]
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.4, 
+       facname = "Sensibility", groupfacname = "Group") + theme_bw()
+ggsave(filename = "images/LDA-detrend-non-infecté.png", width = 8, height = 8, dpi = 300)
+```
+
+Densities of discriminant axes of uninfected
+
+```{r}
+plot_ds1 <- data.frame(group, lda$li) %>% 
+  ggplot(aes(x = DS1)) + 
+    geom_density(aes(fill = group), alpha = 0.5) + 
+    theme_bw()
+plot_ds2 <- data.frame(group, lda$li) %>%
+  ggplot(aes(x = DS2)) + 
+    geom_density(aes(fill = group), alpha = 0.5) +
+    theme_bw()
+plot_grid(plot_ds1, plot_ds2, align='h', labels = c('A: uninfected', 'B: uninfected'))
+```
+
+Idem, but on infected ionomes.
+
+```{r results='hide'}
+group <- mmdf_detrend$Cultivars[data$Trait == "Infected" & io]
+pca <- dudi.pca(bal_detrend[data$Trait == "Infected" & io, -1], scannf = FALSE, scale = FALSE)
+lda <- discrimin(pca, group, scannf = FALSE)
+rownames(lda$fa) <- ilrDef[-1]
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.15, 
+       facname = "Sensibility", groupfacname = "Group") + theme_bw()
+ggsave(filename = "images/LDA-detrend-infecté.png", width = 8, height = 8, dpi = 300)
+```
+
+```{r}
+plot_ds1 <- data.frame(group, lda$li) %>% 
+  ggplot(aes(x = DS1)) + 
+    geom_density(aes(fill = group), alpha = 0.5) + 
+    theme_bw()
+plot_ds2 <- data.frame(group, lda$li) %>%
+  ggplot(aes(x = DS2)) + 
+    geom_density(aes(fill = group), alpha = 0.5) +
+    theme_bw()
+plot_grid(plot_ds1, plot_ds2, align='h', labels = c('A: infected', 'B: infected'))
+```
+
+The discrimination between group performs surprisingly well when groups are segmented between inoculated and non-inoculated sets. We should make sure that we are not overfitting and overinterpreting things here. Let's see with a redundancy alanysis.
+
+# Redundancy analyses (RDA)
+
+Redundancy analyses are performed to assess the *effect of the cultivar\*infection on the ionome*. I prepare two datasets: one with the balances where the experimental effect was removed (detrended), and the other one with original balances. The analysis where experimental effect was not removed is done with partial RDA, i.e. conditioned on the `Experience` column.
+
+```{r}
+c_ <- mmdf_detrend$Cultivars[io]
+c_ <- relevel(c_, ref = "VIV")
+c_re <- mmdf$Cultivars[io]  # not detrended, ie with random effect (re): test partial RDA
+c_re <- relevel(c_, ref = "VIV")
+t <- data$Trait[io]
+t <- factor(t, levels = rev(levels(t)))
+levels(t)[2] <- "*"
+bal_ <- bal_detrend[io, ]
+redun_bal <- rda(bal_ ~ c_ * t, scale = TRUE)  #idem: redun_bal = rda(X=bal_, Y=model.matrix(~ c_ * trt_), scale=TRUE)
+redun_bal_cond <- rda(bal_ ~ c_re * t + Condition(Experience), 
+                      data = data.frame(c_re, t, Experience = mmdf$Experience[io]), scale = TRUE)
+par(mfrow=c(1, 2))
+ordiplot(redun_bal)
+ordiplot(redun_bal_cond)
+```
+
+Ordination plots show very similar patterns. We keep on with detrended balances to assure consistency.
+
+The `anova` function on RDA (in fact, the `anova.cca` function) uses permutations to test the signifiance of coefficients and axes of the RDA.
+
+```{r}
+anova(redun_bal, by = "term")
+anova(redun_bal, by = "axis")
+```
+
+The ordination triplot is exported in `svg` format, so that labels could be moved to better locations in [Inkscpae](https://inkscape.org).
+
+```{r}
+svg(filename = "images/RDA.svg", width = 8, height = 8)
+plot(x = 0, y = 0, type = "n", xlim = c(-1.8, 1.5), ylim = c(-1.8, 1.4), xlab = "RDA1", 
+     ylab = "RDA2")
+abline(v = 0, h = 0, lty = 3, col = "grey")
+sc <- scores(redun_bal, scaling = 2, display = "wa")
+points(sc, pch = 16, cex = 2, col = rgb(0, 0, 0, 0.07))
+text(redun_bal, scaling = 2, display = "bp", col = "black")
+sc <- scores(redun_bal, scaling = 2, display = "species")
+arrows(0, 0, sc[, 1], sc[, 2], length = 0.05, col = "grey60")
+ordilabel(redun_bal, display = "sp", col = "white", fill = "grey10", border = "grey10")
+dev.off()
+```
+
+# Compositional dendrograms
+
+The following chunk explores patterns with compositional dendrograms. Plots are exported in the `images` subfolder.
+
+```{r results='hide'}
+RsquareAdj(redun_bal)$r.squared
+couleurs <- c("#3892e0", "#da4d45", "#f37329", "#fbd25d", "#93d844", "#8a4ebf", "#ffffff", 
+              "#333333", "#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f", 
+              "#e5c494", "#b3b3b3")
+
+# Tout
+png(filename = "images/codadendrogramme_tout_conf.png", units = "in", width = 10, 
+    height = 8, res = 300)
+CoDaDendrogram2(comp_detrend, V = gsi.buildilrBase(t(sbp)), equal.height = TRUE, 
+                group = c_, type = "conf", conf.level = 0.95, range = "auto", col = couleurs)
+legend(x = 11, y = 1.23, legend = levels(c_), pt.bg = couleurs, pch = 21)
+dev.off()
+
+png(filename = "images/codadendrogramme_tout_boxplot.png", units = "in", width = 10, 
+    height = 8, res = 300)
+CoDaDendrogram2(comp_detrend, V = gsi.buildilrBase(t(sbp)), equal.height = TRUE, 
+                group = c_, type = "boxplot", range = "auto", col = couleurs)
+legend(x = 11, y = 1.23, legend = levels(c_), pt.bg = couleurs, pch = 21)
+dev.off()
+
+
+# Non-Innoculé
+png(filename = "images/codadendrogramme_uninfected_conf.png", units = "in", width = 10, 
+    height = 8, res = 300)
+CoDaDendrogram2(comp_detrend[data$Trait[io] == "Uninfected", ], V = gsi.buildilrBase(t(sbp)), 
+                equal.height = TRUE, group = c_[data$Trait[io] == "Uninfected"], type = "conf", 
+                conf.level = 0.95, range = "auto", col = couleurs)
+legend(x = 11, y = 1.23, legend = levels(c_), pt.bg = couleurs, pch = 21)
+dev.off()
+
+png(filename = "images/codadendrogramme_uninfected_boxplot.png", units = "in", width = 10, 
+    height = 8, res = 300)
+CoDaDendrogram2(comp_detrend[data$Trait == "Uninfected", ], V = gsi.buildilrBase(t(sbp)), 
+                equal.height = TRUE, group = c_[data$Trait == "Uninfected"], type = "boxplot", 
+                range = "auto", col = couleurs)
+legend(x = 11, y = 1.23, legend = levels(c_), pt.bg = couleurs, pch = 21)
+dev.off()
+
+# Innoculé
+png(filename = "images/codadendrogramme_infected_conf.png", units = "in", width = 10, 
+    height = 8, res = 300)
+CoDaDendrogram2(comp_detrend[data$Trait[io] == "Infected", ], V = gsi.buildilrBase(t(sbp)), 
+                equal.height = TRUE, group = c_[data$Trait[io] == "Infected"], type = "conf", 
+                conf.level = 0.95, range = "auto", col = couleurs)
+legend(x = 11, y = 1.23, legend = levels(c_), pt.bg = couleurs, pch = 21)
+dev.off()
+
+png(filename = "images/codadendrogramme_infected_boxplot.png", units = "in", width = 10, 
+    height = 8, res = 300)
+CoDaDendrogram2(comp_detrend[data$Trait[io] == "Infected", ], V = gsi.buildilrBase(t(sbp)), 
+                equal.height = TRUE, group = c_[data$Trait[io] == "Infected"], type = "boxplot", 
+                range = "auto", col = couleurs)
+legend(x = 11, y = 1.23, legend = levels(c_), pt.bg = couleurs, pch = 21)
+dev.off()
+
+
+```
+
+# Analysis of the sensibility to infection
+
+Question: can susceptibility class be discriminated by their ionome?
+
+A linear discriminant analysis can portray a 2D representation of the most discriminant projection.
+
+```{r results='hide'}
+group <- mmdf_detrend$Niv..de.sens.
+pca <- dudi.pca(unclass(bal_detrend), scannf = FALSE, scale = FALSE)
+lda <- discrimin(pca, group, scannf = FALSE)
+rownames(lda$fa) <- ilrDef
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
+       groupfacname = "Group") + scale_shape_manual(values = c(21, 22, 23, 24), "Sensibility") + 
+  theme_bw()
+ggsave(filename = "images/LDA-detrended-tout-sensibilité.svg", width = 8, height = 8)
+```
+
+The general portrait doesn't consider the infection status.
+
+We can conduct separated analyses for infected and uninfected samples.
+
+First, the uninfected.
+
+```{r results='hide'}
+group <- mmdf_detrend$Niv..de.sens.[data$Trait == "Uninfected"]
+pca <- dudi.pca(unclass(bal_detrend[data$Trait == "Uninfected", ]), scannf = FALSE, 
+                scale = FALSE)
+lda <- discrimin(pca, group, scannf = FALSE)
+rownames(lda$fa) <- ilrDef
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
+       groupfacname = "Group") + scale_shape_manual(values = c(21, 22, 23, 24), "Sensibility") + 
+  theme_bw() +
+  ggtitle("Uninfected LDA")
+ggsave(filename = "images/LDA-detrended-uninfected-sensibilité.png", width = 6, 
+       height = 6, dpi = 300)
+
+```
+
+And the infected samples.
+
+```{r results='hide'}
+group <- mmdf_detrend$Niv..de.sens.[data$Trait == "Infected"]
+pca <- dudi.pca(unclass(bal_detrend[data$Trait == "Infected", ]), scannf = FALSE, 
+                scale = FALSE)
+lda <- discrimin(pca, group, scannf = FALSE)
+lda$li[, 1] <- -lda$li[, 1]
+lda$fa[, 1] <- -lda$fa[, 1]
+rownames(lda$fa) <- ilrDef
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
+       groupfacname = "Group") + scale_shape_manual(values = c(21, 22, 23, 24), "Sensibility") + 
+  theme_bw() +
+  ggtitle("Infected LDA")
+ggsave(filename = "images/LDA-detrended-infected-sensibilité.png", width = 8, height = 8, 
+       dpi = 300)
+
+```
+
+## Compositional dendrograms
+
+The following chunk exports compositional dendrograms for exploratory purposes.
+
+```{r results='hide'}
+col3 <- c(rgb(241/255, 163/255, 64/255), rgb(247/255, 247/255, 247/255), rgb(153/255, 
+                                                                             142/255, 195/255))
+col3_ <- c(rgb(191/255, 113/255, 14/255), rgb(185/255, 185/255, 185/255), rgb(94/255, 
+                                                                              79/255, 149/255))
+col3__ <- c(col3[1], col3_[1], col3[2], col3_[2], col3[3], col3_[3])
+
+group <- as.character(mmdf_detrend$Niv..de.sens.[io])
+is.infected <- ifelse(data$Trait == "Uninfected", "", "*")
+group <- factor(paste(group, is.infected))
+
+png(filename = "images/codadendrogramme_sensibilité_tout_conf.png", units = "in", 
+    width = 10, height = 8, res = 300)
+CoDaDendrogram2(comp_detrend[io, ], V = gsi.buildilrBase(t(sbp)), equal.height = TRUE, 
+                group = group[io], type = "conf", conf.level = 0.95, range = "auto", col = col3__)
+legend(x = 9, y = 1.2, legend = c("Susceptible uninfected", "Susceptible infected", 
+                                  "Intermediate uninfected", "Intermediate infected", "Tolerant uninfected", "Tolerant infected"), 
+       pt.bg = col3__, pch = 22)
+dev.off()
+
+
+png(filename = "images/codadendrogramme_sensibilité_tout_boxplot.png", units = "in", 
+    width = 10, height = 8, res = 300)
+CoDaDendrogram2(comp_detrend[io, ], V = gsi.buildilrBase(t(sbp)), equal.height = TRUE, 
+                group = group[io], type = "boxplot", range = "auto", col = col3__)
+legend(x = 10, y = 1.1, legend = c("Susceptible uninfected", "Susceptible infected", 
+                                   "Intermediate uninfected", "Intermediate infected", "Tolerant uninfected", "Tolerant infected"), 
+       pt.bg = col3__, pch = 22)
+dev.off()
+
+```
+
+# Mixed model
+
+In this last section, we are relating sensibility index (DSI) with treatment (infection or not) and the ionome.
+
+We prepare the `df_s` data.frame in this perspective.
+
+```{r}
+df_s <- left_join(mmdf, sensibility[, -3], by = "Cultivars")
+df_s$sensib.num <- NA  # model.matrix(~df_s$Niv..de.sens.)[, 2]
+df_s$sensib.num[df_s$Niv..de.sens. == "Tolerant"] <- 1
+df_s$sensib.num[df_s$Niv..de.sens. == "Intermediate"] <- 0
+df_s$sensib.num[df_s$Niv..de.sens. == "Susceptible"] <- -1
+df_s$Trait <- factor(df_s$Trait, levels(df_s$Trait)[c(2, 1)])
+colnames(df_s)[grepl("X.", colnames(df_s))] <- ilrNo
+```
+
+The `df_s_sc` table scales balances so that coefficients can be interpreted on the same scale.
+
+```{r}
+df_s_sc <- df_s
+df_s_sc[, 4:14] <- apply(df_s_sc[, 4:14], 2, function(x) base::scale(x))
+```
+
+
+
+We use the `nlme` package to linearly relate treatment and ionome (not detrended) to DSI, with `Experience` as random intercept.
+
+```{r}
+mm_sensib_fixed_formula <- as.formula(paste("DSI ~ 1 +", paste("Trait *", ilrNo, collapse = "+")))
+print(mm_sensib_fixed_formula)
+mm_sensib_sc <- lme(df_s_sc, 
+                 fixed = mm_sensib_fixed_formula,
+                 random = ~1 | Experience)
+```
+
+The following table resumes the mixed model, with a signifiance test at the 0.05 level.
+
+```{r}
+mms_summ <- summary(mm_sensib_sc)
+mms_summ_LL <- intervals(mms_summ)[[1]][-1, 1]
+mms_summ_val <- intervals(mms_summ)[[1]][-1, 2]
+mms_summ_UL <- intervals(mms_summ)[[1]][-1, 3]
+
+mms_intervals <- data.frame(ll = intervals(mms_summ)[[1]][-1, 1], 
+                            est = intervals(mms_summ)[[1]][-1, 2], 
+                            ul = intervals(mms_summ)[[1]][-1, 3], 
+                            pval = mms_summ$tTable[-1, 5], 
+                            is_significant = ifelse(mms_summ$tTable[-1, 5] <= 0.05, "significant at 0.05 level", "not significant at 0.05 level"))
+mms_intervals$variable <- rownames(mms_intervals)
+rownames(mms_intervals) <- 1:nrow(mms_intervals)
+
+mms_intervals$variable[1] <- "Infected"
+mms_intervals$variable[2:12] <- ilrDef
+mms_intervals$variable[13:23] <- paste("Infected", ilrDef)
+mms_intervals$variable <- factor(mms_intervals$variable, levels = rev(c("Infected", 
+                                                                        ilrDef, paste("Infected", ilrDef))))
+mms_intervals$variable_category <- factor(c("Treatment", rep("ILR", length(ilrDef)), 
+                                            rep("Interactions", length(ilrDef))), levels = c("Treatment", "ILR", "Interactions"))
+mms_intervals
+```
+
+The table is shown in a plot.
+
+```{r}
+ggplot(mms_intervals, aes(x = est, y = variable)) + 
+  facet_grid(variable_category ~ ., scales = "free_y", space = "free_y") + 
+  geom_segment(aes(x = ll, xend = ul, y = variable, yend = variable, colour = is_significant), size = 1) + 
+  geom_point(aes(colour = is_significant)) + 
+  geom_vline(xintercept = 0, colour = "grey50") + 
+  scale_colour_manual(values = c("gray70", "gray30"), "Test") + 
+  ylab("") + 
+  xlab("Scaled effect") +
+  theme_bw() + 
+  theme(strip.text.y = element_text(angle = 0)) + 
+  theme(legend.position = "bottom")
+ggsave(filename = "images/mm_effet-bal-sur-DSI.png", width = 7, height = 5, dpi = 300)
+```
+
+For sake of exploratory analysis, we could ask the following question: how are balances affected by the infection? To answer the question, we create a linear mixed model for each ilr, with the treatment and the cultivar as fixed effect, and the experiment as random intercept.
+
+Data need to be prepared correctly. The `VIV` cultivar is selected as reference.
+
+```{r}
+df_s_sc$Cultivars <- relevel(df_s_sc$Cultivars, ref = "VIV")
+```
+
+We create several lists to store the results of each mixed model.
+
+```{r}
+ilr_summ <- list()
+ilr_aov <- list()
+ilr_summ_val <- list()
+ilr_summ_LL <- list()
+ilr_summ_UL <- list()
+ilr_summ_pval <- list()
+```
+
+In a loop over each ilr, we run a mixed model and store results in lists.
+
+```{r}
+for (i in 1:length(ilrNo)) {
+  mix_model <- lme(df_s_sc, fixed = as.formula(paste(ilrNo[i], "~ Trait * Cultivars")), 
+                   random = ~1 | Experience)
+  ilr_aov[[i]] <- anova(mix_model)
+  ilr_summ[[i]] <- summary(mix_model)$tTable
+  ilr_summ_val[[i]] <- ilr_summ[[i]][-1, 1]
+  ilr_summ_LL[[i]] <- intervals(mix_model)[[1]][-1, 1]
+  ilr_summ_UL[[i]] <- intervals(mix_model)[[1]][-1, 3]
+  ilr_summ_pval[[i]] <- ilr_summ[[i]][-1, 5]
+}
+```
+
+Results stored in lists are converted to data.frames.
+
+```{r}
+names(ilr_summ) <- ilrDef
+names(ilr_aov) <- ilrDef
+
+ilr_df_val <- data.frame(ilr_summ_val)
+colnames(ilr_df_val) <- ilrDef
+
+ilr_df_LL <- data.frame(ilr_summ_LL)
+colnames(ilr_df_LL) <- ilrDef
+
+ilr_df_UL <- data.frame(ilr_summ_UL)
+colnames(ilr_df_UL) <- ilrDef
+
+ilr_df_pval <- data.frame(ilr_summ_pval)
+colnames(ilr_df_pval) <- ilrDef
+
+```
+
+Names of effects are turned prettier.
+
+```{r}
+effect_names <- c("Infected", 
+                  paste("Cultivar", levels(df_s_sc$Cultivars)[-1]), 
+                  paste("Infected Cultivar",levels(df_s_sc$Cultivars)[-1]))
+
+effect_cultivar <- c("None", levels(df_s_sc$Cultivars)[-1], levels(df_s_sc$Cultivars)[-1])
+```
+
+And prettier tables...
+
+```{r}
+### Val
+ilr_df_val$Effect <- factor(effect_names)
+ilr_df_val$EffectType <- factor(c("Treatment", rep("Cultivar", nlevels(df_s_sc$Cultivars) - 
+                                                     1), rep("Interactions", nlevels(df_s_sc$Cultivars) - 1)))
+ilr_df_val$Cultivars <- effect_cultivar
+ilr_df_val <- left_join(ilr_df_val, sensibility[, -3], by = "Cultivars")
+
+### Lower limit
+ilr_df_LL$Effect <- ilr_df_val$Effect
+ilr_df_LL$EffectType <- ilr_df_val$EffectType
+ilr_df_LL$Cultivars <- ilr_df_val$Cultivars
+ilr_df_LL <- left_join(ilr_df_LL, sensibility[, -3], by = "Cultivars")
+
+### Upper limit
+ilr_df_UL$Effect <- ilr_df_val$Effect
+ilr_df_UL$EffectType <- ilr_df_val$EffectType
+ilr_df_UL$Cultivars <- ilr_df_val$Cultivars
+ilr_df_UL <- left_join(ilr_df_UL, sensibility[, -3], by = "Cultivars")
+
+## arrange effect p-value table
+ilr_df_pval$Effect <- ilr_df_val$Effect
+ilr_df_pval$EffectType <- ilr_df_val$EffectType
+ilr_df_pval$Cultivars <- ilr_df_val$Cultivars
+ilr_df_pval <- left_join(ilr_df_pval, sensibility[, -3], by = "Cultivars")
+
+```
+ 
+All in one table...
+
+```{r}
+val_gather <- gather(ilr_df_val, variable, balance, -Effect, -EffectType, -Cultivars, -Niv..de.sens.)
+ll_gather <- gather(ilr_df_LL, variable, ll, -Effect, -EffectType, -Cultivars, -Niv..de.sens.)
+ul_gather <- gather(ilr_df_UL, variable, ul, -Effect, -EffectType, -Cultivars, -Niv..de.sens.)
+pval_gather <- gather(ilr_df_pval, variable, pval, -Effect, -EffectType, -Cultivars, -Niv..de.sens.)
+
+gg_effect <- data.frame(val_gather, 
+                        ll = ll_gather$ll, 
+                        ul = ul_gather$ul, 
+                        p.value = pval_gather$pval)
+gg_effect$is.significant <- gg_effect$p.value <= 0.05
+gg_effect$EffectType <- factor(gg_effect$EffectType, levels(gg_effect$EffectType)[c(3, 1, 2)])
+gg_effect$is.significant <- factor(gg_effect$is.significant)
+levels(gg_effect$is.significant) <- c("not significant at 0.05 level", "significant at 0.05 level")
+names(gg_effect)[4] <- "Sensibility"
+gg_effect$Sensibility <- as.character(gg_effect$Sensibility)
+gg_effect$Sensibility[is.na(gg_effect$Sensibility)] <- "n/a"
+gg_effect$Sensibility <- factor(gg_effect$Sensibility, levels = unique(gg_effect$Sensibility)[c(3, 4, 2, 1)])
+```
+
+And the plot...
+
+```{r fig.width=18, fig.height=5}
+ggplot(gg_effect) +
+  facet_grid(EffectType ~ variable, scales = "free_y", space = "free_y") + 
+  geom_segment(aes(x = Effect, xend = Effect, y = ll, yend = ul, colour = is.significant), size = 1) + 
+  geom_point(aes(y = balance, x = Effect, fill = is.significant, shape = Sensibility), size = 2) + 
+  geom_hline(yintercept = 0, colour = "grey50") + 
+  ylab("Scaled effect") + 
+  coord_flip() + 
+  theme_bw() + 
+  scale_fill_manual(values = c("gray70", "gray30"), "Test") +
+  scale_colour_manual(values = c("gray70", "gray30"), "Test") + 
+  scale_shape_manual(values = c(21, 22, 23, 24), "Sensibility") + 
+  theme(strip.text.y = element_text(angle = 0))
+ggsave(filename = "images/mm_effet-sur-les-balances.png", width = 18, height = 5, dpi = 300)
+```
+
+The `Treatment` row in the plot shows the effect of infection alone on individual balances. The second group, `Cultivar`, shows the effect of the cultivar alone ion individual balances.  The third group, `Interactions`, shows how each cultivar reacts diffently with infection from `VIV` infected samples.

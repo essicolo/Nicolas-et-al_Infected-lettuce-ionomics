@@ -140,14 +140,15 @@ pca <- dudi.pca(unclass(bal), scannf = FALSE, scale = FALSE) # ilrs are already 
 lda <- discrimin(pca, group, scannf = FALSE)
 ```
 
-The densities also show this effect.
 
+The densities also show this effect.
 
 ```{r fig.height=4, fig.width=15}
 ggdf <- data.frame(data[, c(1, 3, 15)], bal)
 colnames(ggdf)[grepl("X.", colnames(ggdf))] <- ilrDef
 ggdf <- ggdf %>%
   gather(variable, balance, -Cultivars, -Trait, -Experience)
+ggdf$variable <- factor(ggdf$variable, levels=ilrDef)
 ggdf %>%
   ggplot(aes(x = balance)) + 
   facet_grid(Trait ~ variable, scales = "free") + 
@@ -225,6 +226,12 @@ ggdf_trend <- rbind(ggdf, ggdf_detrend)
 levels(ggdf_trend$Trait)[c(1, 2)] <- c("Infected\noriginal", "Uninfected\noriginal")
 ggdf_trend$Trait <- factor(ggdf_trend$Trait, levels = c("Infected\noriginal", "Infected\ndetrended", 
                                                         "Uninfected\noriginal", "Uninfected\ndetrended"))
+```
+
+Reordering balance variables.
+
+```{r}
+ggdf_trend$variable <- factor(ggdf_trend$variable, levels=ilrDef)
 ```
 
 Now I'm plotting densities of balances of trended and detrended by infected / uninfected.
@@ -758,6 +765,12 @@ names(gg_effect)[4] <- "Sensibility"
 gg_effect$Sensibility <- as.character(gg_effect$Sensibility)
 gg_effect$Sensibility[is.na(gg_effect$Sensibility)] <- "n/a"
 gg_effect$Sensibility <- factor(gg_effect$Sensibility, levels = unique(gg_effect$Sensibility)[c(3, 4, 2, 1)])
+```
+
+Reordering balances.
+
+```{r}
+gg_effect$variable <- factor(gg_effect$variable, levels=ilrDef)
 ```
 
 And the plot...

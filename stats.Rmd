@@ -12,6 +12,7 @@ Some packages need to be loaded to perform the full analysis.
 ```{r results='hide'}
 library("tidyverse")
 library("cowplot")
+library("ggrepl")
 library("grid")
 library("nlme") # to compute experimental random effects
 library("ade4") # linear discriminant analysis
@@ -25,7 +26,7 @@ library("plyr")
 Other functions are placed in the `lib` folder.
 
 ```{r}
-source("lib/plotDA_1.3.R") # plot LDA needs packages ggplot2, grid, ellipse and plyr
+source("lib/plotDA_1.4.R") # plot LDA needs packages ggplot2, grid, ellipse and plyr
 source("lib/ilrDefinition_1.2.R") # define balances
 source("lib/codadend2.R") # coda dendrogram with extra features
 ```
@@ -487,18 +488,20 @@ We can conduct separated analyses for infected and uninfected samples.
 First, the uninfected.
 
 ```{r results='hide'}
+source("lib/plotDA_1.4.R") # plot LDA needs packages ggplot2, grid, ellipse and plyr
 group <- mmdf_detrend$Niv..de.sens.[data$Trait == "Uninfected"]
 pca <- dudi.pca(unclass(bal_detrend[data$Trait == "Uninfected", ]), scannf = FALSE, 
                 scale = FALSE)
 lda <- discrimin(pca, group, scannf = FALSE)
 rownames(lda$fa) <- ilrDef
-plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
-       groupfacname = "Group") + scale_shape_manual(values = c(21, 22, 23, 24), "Sensibility") + 
+uninfected_LDA <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
+       groupfacname = "Group", propLoadings = 0.5) + 
+  scale_shape_manual(values = c(21, 22, 23), "Sensibility") + 
+  xlim(c(-3, 2)) +
+  ggtitle("A: Uninfected samples") +
   theme_bw() +
-  ggtitle("Uninfected LDA")
-ggsave(filename = "images/LDA-detrended-uninfected-sensibilité.png", width = 6, 
-       height = 6, dpi = 300)
-
+  theme(legend.position="none")
+uninfected_LDA
 ```
 
 And the infected samples.
@@ -511,14 +514,21 @@ lda <- discrimin(pca, group, scannf = FALSE)
 lda$li[, 1] <- -lda$li[, 1]
 lda$fa[, 1] <- -lda$fa[, 1]
 rownames(lda$fa) <- ilrDef
-plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
-       groupfacname = "Group") + scale_shape_manual(values = c(21, 22, 23, 24), "Sensibility") + 
+infected_LDA <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
+       groupfacname = "Group", propLoadings = 0.5) + 
+  scale_shape_manual(values = c(21, 22, 23), "Sensibility") + 
+  ggtitle("B: Infected samples") +
+  xlim(c(-4.2, 3)) +
   theme_bw() +
-  ggtitle("Infected LDA")
-ggsave(filename = "images/LDA-detrended-infected-sensibilité.png", width = 8, height = 8, 
-       dpi = 300)
-
+  theme(legend.position="none")
+infected_LDA
 ```
+
+```{r fig.width=13, fig.height=5}
+plot_grid(uninfected_LDA, infected_LDA)
+ggsave(filename = "images/lda_detrended_sensibility.png", width = 13, height = 6, dpi=300)
+```
+
 
 ## Compositional dendrograms
 

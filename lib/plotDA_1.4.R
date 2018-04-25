@@ -97,8 +97,7 @@ plotDA <- function(discrimin, fac, groupfac=NULL, npoints=100, level=0.95,
     theme(axis.text.x=element_text(colour='black', size=11),
           axis.text.y=element_text(colour='black', size=11)) +
     xlab(xlab) + ylab(ylab) +
-    geom_label_repel(data=ggCentersFac, aes(x=DS1, y=DS2, label=fac), size=4,
-               fill='black', colour='white') +
+    geom_label_repel(data=ggCentersFac, aes(x=DS1, y=DS2, label=fac), size=4) +
     labs(fill = facname, shape=facname)
   
   
@@ -124,8 +123,9 @@ plotDA <- function(discrimin, fac, groupfac=NULL, npoints=100, level=0.95,
                  arrow=arrow(length=unit(0.2,"cm"))) +
     #geom_label(data=ggLoadings, aes(DS1, DS2, label = ilrDef, hjust=hjust, vjust=vjust), 
     #           size=4, fill='black', colour='white')
-    geom_label_repel(data=ggLoadings, aes(DS1, DS2, label = ilrDef, hjust=hjust, vjust=vjust), 
-               size=4, segment.size=0.2)
+    geom_label_repel(data=ggLoadings, aes(DS1, DS2, label = ilrDef, hjust=hjust, vjust=vjust),
+                     fill='black', colour='white',
+                     size=4, segment.size=0.2)
   
   ggMontage
 }

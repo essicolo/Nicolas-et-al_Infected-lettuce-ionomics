@@ -12,7 +12,7 @@ Some packages need to be loaded to perform the full analysis.
 ```{r results='hide'}
 library("tidyverse")
 library("cowplot")
-library("ggrepl")
+library("ggrepel")
 library("grid")
 library("nlme") # to compute experimental random effects
 library("ade4") # linear discriminant analysis
@@ -524,7 +524,7 @@ infected_LDA <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 
 infected_LDA
 ```
 
-```{r fig.width=13, fig.height=5}
+```{r fig.width=13, fig.height=6}
 plot_grid(uninfected_LDA, infected_LDA)
 ggsave(filename = "images/lda_detrended_sensibility.png", width = 13, height = 6, dpi=300)
 ```

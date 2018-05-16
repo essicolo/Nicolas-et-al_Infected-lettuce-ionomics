@@ -365,7 +365,7 @@ The discrimination between group performs surprisingly well when groups are segm
 
 Plot both infected and uninfected linear discriminant analyses.
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 plot_grid(lda_uninfected, lda_uninfected, align="h", labels = c("A: Uninfected samples", "B: Infected samples"))
 ggsave(filename = "images/LDA-inf-uninf.png", width = 12, height = 6, dpi = 300)
 
@@ -423,7 +423,7 @@ ggplot(wa_sc, aes(x=RDA1, y=RDA2)) +
   scale_colour_manual(values = c('white', 'black')) +
   theme_bw() +
   theme(legend.position = 'none')
-ggsave(filename = "images/RDA.png", width = 8, height = 8, dpi=300)
+ggsave(filename = "images/RDA.png", width = 6, height = 6, dpi=300)
 ```
 
 

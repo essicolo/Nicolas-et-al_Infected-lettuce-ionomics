@@ -9,7 +9,7 @@ This notebook contains the necessary computations for the statistics of the pape
 
 Some packages need to be loaded to perform the full analysis.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 library("tidyverse")
 library("cowplot")
 library("ggrepel")
@@ -80,7 +80,7 @@ if (mean(data$N) < 1000) data$N <- data$N * 1000
 
 The `parts` matrix contains the elements of the simplex. I'm adding `Fv`, the filling value (elements other than those measured in the ionome, mainly C, O and H). The `acomp` function closes all lines to a constant sum of 1.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 parts <- data[, -c(1, 2, 3, 4, 15)]
 parts$Fv <- 1e+06 - rowSums(parts)
 comp <- acomp(parts)
@@ -88,7 +88,7 @@ comp <- acomp(parts)
 
 Balances are computed according to a schema encoded in a sequential binary partition (SBP). The names of the balances are defined in `ilrDef` as `[list of denominator components | list numerator components]`.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 sbp <- read.csv(file = "data/sbp_sansAl.csv", sep = ";", dec = ".", header = TRUE)
 ilrDef <- ilrDefinition(sbp = sbp, side = "-+")  # balance definitions from sbp
 ilrDef[1] <- "[Fv | nutrients]"
@@ -101,7 +101,7 @@ CoDaDendrogram(comp, V = gsi.buildilrBase(t(sbp)))
 
 The following chunk creates a coda dendrorgam figure showing how balances are created in the sbp.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 comp_dummy <- matrix(1L, nrow = 5, ncol = ncol(comp))
 colnames(comp_dummy) <- colnames(comp)
 png("images/codadend_schema.png", width = 1500, height = 1000, res = 300)
@@ -148,7 +148,6 @@ ggdf <- data.frame(data[, c(1, 3, 15)], bal)
 colnames(ggdf)[grepl("X.", colnames(ggdf))] <- ilrDef
 ggdf <- ggdf %>%
   gather(variable, balance, -Cultivars, -Trait, -Experience)
-ggdf$variable <- factor(ggdf$variable, levels=ilrDef)
 ggdf %>%
   ggplot(aes(x = balance)) + 
   facet_grid(Trait ~ variable, scales = "free") + 
@@ -161,7 +160,7 @@ ggdf %>%
 
 The `plotDA` custom function is used for publishable-ready plots.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.8, 
        facname = "Experiment", groupfacname = "Group") + scale_fill_manual(values = unique(couleurs)) + 
   theme_bw()
@@ -249,10 +248,12 @@ ggsave(filename = "images/Densité-Experience--detrended.png", width = 16,
 
 The linear discriminant analysis across detrended balances.
 
-```{r results='hide'}
+```{r}
 group <- data$Experience
 meta_group <- data$Trait
-pca <- dudi.pca(unclass(bal_detrend), scannf = FALSE, scale = FALSE)
+bal_detrend_df <- data.frame(bal_detrend)
+names(bal_detrend_df) <- ilrDef
+pca <- dudi.pca(bal_detrend_df, scannf = FALSE, scale = FALSE)
 lda <- discrimin(pca, group, scannf = FALSE)
 plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.8, 
        facname = "Experiment", groupfacname = "Group") + scale_fill_manual(values = unique(couleurs)) + 
@@ -261,7 +262,7 @@ plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings 
 
 To end this section, I back-transform detrended ilrs to compositions.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 comp_detrend <- ilrInv(bal_detrend, V = gsi.buildilrBase(t(sbp)))
 ```
 
@@ -293,7 +294,7 @@ cbind(group = group[io],
 
 Linear discriminant analysis with cultivars as grouping factor, on detrended without outliers.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 mmdf <- left_join(mmdf, sensibility, by = "Cultivars")
 mmdf_detrend <- left_join(mmdf_detrend, sensibility, by = "Cultivars")
 
@@ -312,14 +313,14 @@ LDA on Uninfected only.
 **Note**: The filling value balance is highly discriminant. Removing the filling value balance makes the LDA blobs not so alligned vertically.
 
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 group <- mmdf_detrend$Cultivars[data$Trait == "Uninfected" & io]
 pca <- dudi.pca(bal_detrend[data$Trait == "Uninfected" & io, -1], scannf = FALSE, scale = FALSE)
 lda <- discrimin(pca, group, scannf = FALSE)
 rownames(lda$fa) <- ilrDef[-1]
-plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.4, 
+lda_uninfected <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.4, 
        facname = "Sensibility", groupfacname = "Group") + theme_bw()
-ggsave(filename = "images/LDA-detrend-non-infecté.png", width = 8, height = 8, dpi = 300)
+lda_uninfected
 ```
 
 Densities of discriminant axes of uninfected
@@ -338,14 +339,14 @@ plot_grid(plot_ds1, plot_ds2, align='h', labels = c('A: uninfected', 'B: uninfec
 
 Idem, but on infected ionomes.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 group <- mmdf_detrend$Cultivars[data$Trait == "Infected" & io]
 pca <- dudi.pca(bal_detrend[data$Trait == "Infected" & io, -1], scannf = FALSE, scale = FALSE)
 lda <- discrimin(pca, group, scannf = FALSE)
 rownames(lda$fa) <- ilrDef[-1]
-plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.15, 
+lda_infected <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.15, 
        facname = "Sensibility", groupfacname = "Group") + theme_bw()
-ggsave(filename = "images/LDA-detrend-infecté.png", width = 8, height = 8, dpi = 300)
+lda_infected
 ```
 
 ```{r}
@@ -361,6 +362,15 @@ plot_grid(plot_ds1, plot_ds2, align='h', labels = c('A: infected', 'B: infected'
 ```
 
 The discrimination between group performs surprisingly well when groups are segmented between inoculated and non-inoculated sets. We should make sure that we are not overfitting and overinterpreting things here. Let's see with a redundancy alanysis.
+
+Plot both infected and uninfected linear discriminant analyses.
+
+```{r}
+plot_grid(lda_uninfected, lda_uninfected, align="h", labels = c("A: Uninfected samples", "B: Infected samples"))
+ggsave(filename = "images/LDA-inf-uninf.png", width = 12, height = 6, dpi = 300)
+
+```
+
 
 # Redundancy analyses (RDA)
 
@@ -392,27 +402,36 @@ anova(redun_bal, by = "term")
 anova(redun_bal, by = "axis")
 ```
 
-The ordination triplot is exported in `svg` format, so that labels could be moved to better locations in [Inkscpae](https://inkscape.org).
+The ordination triplot is created with `ggplot2`.
 
 ```{r}
-svg(filename = "images/RDA.svg", width = 8, height = 8)
-plot(x = 0, y = 0, type = "n", xlim = c(-1.8, 1.5), ylim = c(-1.8, 1.4), xlab = "RDA1", 
-     ylab = "RDA2")
-abline(v = 0, h = 0, lty = 3, col = "grey")
-sc <- scores(redun_bal, scaling = 2, display = "wa")
-points(sc, pch = 16, cex = 2, col = rgb(0, 0, 0, 0.07))
-text(redun_bal, scaling = 2, display = "bp", col = "black")
-sc <- scores(redun_bal, scaling = 2, display = "species")
-arrows(0, 0, sc[, 1], sc[, 2], length = 0.05, col = "grey60")
-ordilabel(redun_bal, display = "sp", col = "white", fill = "grey10", border = "grey10")
-dev.off()
+wa_sc <- data.frame(scores(redun_bal, scaling = 2, display = "wa"))
+sp_sc <-  data.frame(scores(redun_bal, scaling = 2, display = "species"), variable=ilrDef, type='sp')
+bp_sc <- scores(redun_bal, scaling = 2, display = "bp")
+bp_sc <- data.frame(bp_sc, variable=rownames(bp_sc), type='bp')
+sp_bp_sc <- rbind(sp_sc, bp_sc)
+
+ggplot(wa_sc, aes(x=RDA1, y=RDA2)) +
+  geom_vline(xintercept = 0, colour='grey15', lwd=0.3) +
+  geom_hline(yintercept = 0, colour='grey15', lwd=0.3) +
+  geom_point(alpha=0.07, size=4) +
+  #geom_segment(data=sp_bp_sc, aes(x=0, y=0, xend=RDA1, yend=RDA2), size=0.5,
+  #             arrow=arrow(length=unit(0.2,"cm"))) +
+  geom_point(data = sp_bp_sc, mapping = aes(colour=type, fill=type), size=2) +
+  geom_label_repel(data = sp_bp_sc, mapping = aes(colour=type, fill=type, label=variable)) +
+  scale_fill_manual(values = c('black', 'white')) +
+  scale_colour_manual(values = c('white', 'black')) +
+  theme_bw() +
+  theme(legend.position = 'none')
+ggsave(filename = "images/RDA.png", width = 8, height = 8, dpi=300)
 ```
+
 
 # Compositional dendrograms
 
 The following chunk explores patterns with compositional dendrograms. Plots are exported in the `images` subfolder.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE, message=FALSE, warning=FALSE}
 RsquareAdj(redun_bal)$r.squared
 couleurs <- c("#3892e0", "#da4d45", "#f37329", "#fbd25d", "#93d844", "#8a4ebf", "#ffffff", 
               "#333333", "#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f", 
@@ -467,8 +486,6 @@ CoDaDendrogram2(comp_detrend[data$Trait[io] == "Infected", ], V = gsi.buildilrBa
                 range = "auto", col = couleurs)
 legend(x = 11, y = 1.23, legend = levels(c_), pt.bg = couleurs, pch = 21)
 dev.off()
-
-
 ```
 
 # Analysis of the sensibility to infection
@@ -477,7 +494,7 @@ Question: can susceptibility class be discriminated by their ionome?
 
 A linear discriminant analysis can portray a 2D representation of the most discriminant projection.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 group <- mmdf_detrend$Niv..de.sens.
 pca <- dudi.pca(unclass(bal_detrend), scannf = FALSE, scale = FALSE)
 lda <- discrimin(pca, group, scannf = FALSE)
@@ -494,8 +511,7 @@ We can conduct separated analyses for infected and uninfected samples.
 
 First, the uninfected.
 
-```{r results='hide'}
-source("lib/plotDA_1.4.R") # plot LDA needs packages ggplot2, grid, ellipse and plyr
+```{r message=FALSE, warning=FALSE}
 group <- mmdf_detrend$Niv..de.sens.[data$Trait == "Uninfected"]
 pca <- dudi.pca(unclass(bal_detrend[data$Trait == "Uninfected", ]), scannf = FALSE, 
                 scale = FALSE)
@@ -513,7 +529,7 @@ uninfected_LDA
 
 And the infected samples.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 group <- mmdf_detrend$Niv..de.sens.[data$Trait == "Infected"]
 pca <- dudi.pca(unclass(bal_detrend[data$Trait == "Infected", ]), scannf = FALSE, 
                 scale = FALSE)
@@ -527,13 +543,13 @@ infected_LDA <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 
   ggtitle("B: Infected samples") +
   xlim(c(-4.2, 3)) +
   theme_bw() +
-  theme(legend.position=c(0.3, 0.04), legend.direction="horizontal")
+  theme(legend.position=c(0.4, 0.05), legend.direction="horizontal")
 infected_LDA
 ```
 
 ```{r fig.width=13, fig.height=6}
 plot_grid(uninfected_LDA, infected_LDA)
-ggsave(filename = "images/lda_detrended_sensibility.png", width = 13, height = 6, dpi=300)
+ggsave(filename = "images/lda_detrended_sensibility.png", width = 10, height = 5, dpi=300)
 ```
 
 
@@ -541,7 +557,7 @@ ggsave(filename = "images/lda_detrended_sensibility.png", width = 13, height = 6
 
 The following chunk exports compositional dendrograms for exploratory purposes.
 
-```{r results='hide'}
+```{r message=FALSE, warning=FALSE}
 col3 <- c(rgb(241/255, 163/255, 64/255), rgb(247/255, 247/255, 247/255), rgb(153/255, 
                                                                              142/255, 195/255))
 col3_ <- c(rgb(191/255, 113/255, 14/255), rgb(185/255, 185/255, 185/255), rgb(94/255, 

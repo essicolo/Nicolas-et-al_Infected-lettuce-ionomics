@@ -86,7 +86,6 @@ plotDA <- function(discrimin, fac, groupfac=NULL, npoints=100, level=0.95,
   
   #PLOT
   ggScores <- data.frame(fac, scores)
-  ggCentersFac <- data.frame(fac=levels(fac), centersFac)
   ggMontage <- ggplot(data=ggScores, aes(x=DS1, y=DS2)) +
     geom_vline(xintercept = 0, colour='grey15', lwd=0.3) +
     geom_hline(yintercept = 0, colour='grey15', lwd=0.3) +
@@ -97,7 +96,6 @@ plotDA <- function(discrimin, fac, groupfac=NULL, npoints=100, level=0.95,
     theme(axis.text.x=element_text(colour='black', size=11),
           axis.text.y=element_text(colour='black', size=11)) +
     xlab(xlab) + ylab(ylab) +
-    geom_label_repel(data=ggCentersFac, aes(x=DS1, y=DS2, label=fac), size=4) +
     labs(fill = facname, shape=facname)
   
   
@@ -113,28 +111,26 @@ plotDA <- function(discrimin, fac, groupfac=NULL, npoints=100, level=0.95,
     ggMontage <- ggMontage + geom_path(data=data.frame(cex, cey), aes(cex, cey))
   }
   
-  ggLoadings <- data.frame(ilrDef=rownames(loadings), 
+  ggLoadings <- data.frame(def=rownames(loadings), 
                            propLoadings*loadings,
                            hjust = ifelse(loadings[, 1] < 0, 1.05, -0.05),
-                           vjust = ifelse(loadings[, 2] < 0, 1.05, -0.05))
+                           vjust = ifelse(loadings[, 2] < 0, 1.05, -0.05),
+                           type='loading')
+  
+  ggCentersFac <- data.frame(def=levels(fac),
+                             centersFac,
+                             hjust=0,
+                             vjust=0,
+                             type='group')
+  gg_labels <- rbind(ggLoadings, ggCentersFac)
   
   ggMontage <- ggMontage + 
-    geom_segment(data=ggLoadings, aes(x=0, y=0, xend=DS1, yend=DS2), size=0.5,
+    geom_segment(data=ggLoadings, aes(x=0, y=0, xend=DS1, yend=DS2), size=1,
                  arrow=arrow(length=unit(0.2,"cm"))) +
-    #geom_label(data=ggLoadings, aes(DS1, DS2, label = ilrDef, hjust=hjust, vjust=vjust), 
-    #           size=4, fill='black', colour='white')
-    geom_label_repel(data=ggLoadings, aes(DS1, DS2, label = ilrDef, hjust=hjust, vjust=vjust),
-                     fill='black', colour='white',
-                     size=4, segment.size=0.2)
-  
+    geom_label_repel(data=gg_labels, aes(DS1, DS2, label = def, hjust=hjust, vjust=vjust,
+                                         colour=type, fill=type),
+                     size=3, segment.size=0.5, segment.colour='grey5') +
+    scale_colour_manual(values = c("white", "black"), guide = FALSE) +
+    scale_fill_manual(values = c("black", "white"), guide = FALSE)
   ggMontage
 }
-
-
-
-
-
-
-
-
-

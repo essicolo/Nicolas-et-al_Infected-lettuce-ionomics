@@ -33,17 +33,17 @@ source("lib/codadend2.R") # coda dendrogram with extra features
 
 # Load and prepare data
 
-The main data set is placed in file `data.csv`. The data set `sensib.csv` is a table relating cultivars and their degree of sensibility to *Xanthomonas campestris* infection.
+The main data set is placed in file `data.csv`. The data set `sensib.csv` is a table relating cultivars and their degree of susceptibility to *Xanthomonas campestris* infection.
 
 ```{r}
 data <- read.csv(file = "data/data.csv", sep = ";", dec = ".")
-sensibility <- read.csv("data/sensib.csv", sep = ";")
+susceptibility <- read.csv("data/sensib.csv", sep = ";")
 ```
 
-Sensibility factors must be ordered.
+Susceptibility factors must be ordered.
 
 ```{r}
-sensibility$Niv..de.sens. <- factor(sensibility$Niv..de.sens.,
+susceptibility$Niv..de.sens. <- factor(susceptibility$Niv..de.sens.,
                                     levels = c("Susceptible",
                                                "Intermediate",
                                                "Tolerant"), 
@@ -295,8 +295,8 @@ cbind(group = group[io],
 Linear discriminant analysis with cultivars as grouping factor, on detrended without outliers.
 
 ```{r message=FALSE, warning=FALSE}
-mmdf <- left_join(mmdf, sensibility, by = "Cultivars")
-mmdf_detrend <- left_join(mmdf_detrend, sensibility, by = "Cultivars")
+mmdf <- left_join(mmdf, susceptibility, by = "Cultivars")
+mmdf_detrend <- left_join(mmdf_detrend, susceptibility, by = "Cultivars")
 
 # LDA
 group <- mmdf_detrend$Cultivars[io]
@@ -319,7 +319,7 @@ pca <- dudi.pca(bal_detrend[data$Trait == "Uninfected" & io, -1], scannf = FALSE
 lda <- discrimin(pca, group, scannf = FALSE)
 rownames(lda$fa) <- ilrDef[-1]
 lda_uninfected <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.4, 
-       facname = "Sensibility", groupfacname = "Group") + theme_bw()
+       facname = "Susceptibility", groupfacname = "Group") + theme_bw()
 lda_uninfected
 ```
 
@@ -345,7 +345,7 @@ pca <- dudi.pca(bal_detrend[data$Trait == "Infected" & io, -1], scannf = FALSE, 
 lda <- discrimin(pca, group, scannf = FALSE)
 rownames(lda$fa) <- ilrDef[-1]
 lda_infected <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, propLoadings = 0.15, 
-       facname = "Sensibility", groupfacname = "Group") + theme_bw()
+       facname = "Susceptibility", groupfacname = "Group") + theme_bw()
 lda_infected
 ```
 
@@ -488,7 +488,7 @@ legend(x = 11, y = 1.23, legend = levels(c_), pt.bg = couleurs, pch = 21)
 dev.off()
 ```
 
-# Analysis of the sensibility to infection
+# Analysis of the susceptibility to infection
 
 Question: can susceptibility class be discriminated by their ionome?
 
@@ -499,8 +499,8 @@ group <- mmdf_detrend$Niv..de.sens.
 pca <- dudi.pca(unclass(bal_detrend), scannf = FALSE, scale = FALSE)
 lda <- discrimin(pca, group, scannf = FALSE)
 rownames(lda$fa) <- ilrDef
-plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
-       groupfacname = "Group") + scale_shape_manual(values = c(21, 22, 23, 24), "Sensibility") + 
+plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Susceptibility", 
+       groupfacname = "Group") + scale_shape_manual(values = c(21, 22, 23, 24), "Susceptibility") + 
   theme_bw()
 ggsave(filename = "images/LDA-detrended-tout-sensibilité.svg", width = 8, height = 8)
 ```
@@ -517,10 +517,10 @@ pca <- dudi.pca(unclass(bal_detrend[data$Trait == "Uninfected", ]), scannf = FAL
                 scale = FALSE)
 lda <- discrimin(pca, group, scannf = FALSE)
 rownames(lda$fa) <- ilrDef
-uninfected_LDA <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
+uninfected_LDA <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Susceptibility", 
        groupfacname = "Group", propLoadings = 0.5) + 
-  scale_shape_manual(values = c(21, 22, 23), "Sensibility") + 
-  xlim(c(-3, 2)) +
+  scale_shape_manual(values = c(1, 2, 5), "Susceptibility") + 
+  #xlim(c(-3, 2)) +
   ggtitle("A: Uninfected samples") +
   theme_bw() +
   theme(legend.position="none")
@@ -537,11 +537,11 @@ lda <- discrimin(pca, group, scannf = FALSE)
 lda$li[, 1] <- -lda$li[, 1]
 lda$fa[, 1] <- -lda$fa[, 1]
 rownames(lda$fa) <- ilrDef
-infected_LDA <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Sensibility", 
+infected_LDA <- plotDA(discrimin = lda, fac = group, groupfac = NULL, scaling = 2, facname = "Susceptibility", 
        groupfacname = "Group", propLoadings = 0.5) + 
-  scale_shape_manual(values = c(21, 22, 23), "Sensibility") + 
+  scale_shape_manual(values = c(1, 2, 5), "Susceptibility") + 
   ggtitle("B: Infected samples") +
-  xlim(c(-4.2, 3)) +
+  #xlim(c(-4.2, 3)) +
   theme_bw() +
   theme(legend.position=c(0.4, 0.05), legend.direction="horizontal")
 infected_LDA
@@ -549,7 +549,7 @@ infected_LDA
 
 ```{r fig.width=13, fig.height=6}
 plot_grid(uninfected_LDA, infected_LDA)
-ggsave(filename = "images/lda_detrended_sensibility.png", width = 10, height = 5, dpi=300)
+ggsave(filename = "images/lda_detrended_susceptibility.svg", width = 10, height = 5)
 ```
 
 
@@ -591,12 +591,12 @@ dev.off()
 
 # Mixed model
 
-In this last section, we are relating sensibility index (DSI) with treatment (infection or not) and the ionome.
+In this last section, we are relating susceptibility index (DSI) with treatment (infection or not) and the ionome.
 
 We prepare the `df_s` data.frame in this perspective.
 
 ```{r}
-df_s <- left_join(mmdf, sensibility[, -3], by = "Cultivars")
+df_s <- left_join(mmdf, susceptibility[, -3], by = "Cultivars")
 df_s$sensib.num <- NA  # model.matrix(~df_s$Niv..de.sens.)[, 2]
 df_s$sensib.num[df_s$Niv..de.sens. == "Tolerant"] <- 1
 df_s$sensib.num[df_s$Niv..de.sens. == "Intermediate"] <- 0
@@ -739,25 +739,25 @@ ilr_df_val$Effect <- factor(effect_names)
 ilr_df_val$EffectType <- factor(c("Treatment", rep("Cultivar", nlevels(df_s_sc$Cultivars) - 
                                                      1), rep("Interactions", nlevels(df_s_sc$Cultivars) - 1)))
 ilr_df_val$Cultivars <- effect_cultivar
-ilr_df_val <- left_join(ilr_df_val, sensibility[, -3], by = "Cultivars")
+ilr_df_val <- left_join(ilr_df_val, susceptibility[, -3], by = "Cultivars")
 
 ### Lower limit
 ilr_df_LL$Effect <- ilr_df_val$Effect
 ilr_df_LL$EffectType <- ilr_df_val$EffectType
 ilr_df_LL$Cultivars <- ilr_df_val$Cultivars
-ilr_df_LL <- left_join(ilr_df_LL, sensibility[, -3], by = "Cultivars")
+ilr_df_LL <- left_join(ilr_df_LL, susceptibility[, -3], by = "Cultivars")
 
 ### Upper limit
 ilr_df_UL$Effect <- ilr_df_val$Effect
 ilr_df_UL$EffectType <- ilr_df_val$EffectType
 ilr_df_UL$Cultivars <- ilr_df_val$Cultivars
-ilr_df_UL <- left_join(ilr_df_UL, sensibility[, -3], by = "Cultivars")
+ilr_df_UL <- left_join(ilr_df_UL, susceptibility[, -3], by = "Cultivars")
 
 ## arrange effect p-value table
 ilr_df_pval$Effect <- ilr_df_val$Effect
 ilr_df_pval$EffectType <- ilr_df_val$EffectType
 ilr_df_pval$Cultivars <- ilr_df_val$Cultivars
-ilr_df_pval <- left_join(ilr_df_pval, sensibility[, -3], by = "Cultivars")
+ilr_df_pval <- left_join(ilr_df_pval, susceptibility[, -3], by = "Cultivars")
 
 ```
  
@@ -777,10 +777,10 @@ gg_effect$is.significant <- gg_effect$p.value <= 0.05
 gg_effect$EffectType <- factor(gg_effect$EffectType, levels(gg_effect$EffectType)[c(3, 1, 2)])
 gg_effect$is.significant <- factor(gg_effect$is.significant)
 levels(gg_effect$is.significant) <- c("not significant at 0.05 level", "significant at 0.05 level")
-names(gg_effect)[4] <- "Sensibility"
-gg_effect$Sensibility <- as.character(gg_effect$Sensibility)
-gg_effect$Sensibility[is.na(gg_effect$Sensibility)] <- "n/a"
-gg_effect$Sensibility <- factor(gg_effect$Sensibility, levels = unique(gg_effect$Sensibility)[c(3, 4, 2, 1)])
+names(gg_effect)[4] <- "Susceptibility"
+gg_effect$Susceptibility <- as.character(gg_effect$Susceptibility)
+gg_effect$Susceptibility[is.na(gg_effect$Susceptibility)] <- "n/a"
+gg_effect$Susceptibility <- factor(gg_effect$Susceptibility, levels = unique(gg_effect$Susceptibility)[c(3, 4, 2, 1)])
 ```
 
 Reordering balances.
@@ -795,14 +795,14 @@ And the plot...
 ggplot(gg_effect) +
   facet_grid(EffectType ~ variable, scales = "free_y", space = "free_y") + 
   geom_segment(aes(x = Effect, xend = Effect, y = ll, yend = ul, colour = is.significant), size = 1) + 
-  geom_point(aes(y = balance, x = Effect, fill = is.significant, shape = Sensibility), size = 2) + 
+  geom_point(aes(y = balance, x = Effect, fill = is.significant, shape = Susceptibility), size = 2) + 
   geom_hline(yintercept = 0, colour = "grey50") + 
   ylab("Scaled effect") + 
   coord_flip() + 
   theme_bw() + 
   scale_fill_manual(values = c("gray70", "gray30"), "Test") +
   scale_colour_manual(values = c("gray70", "gray30"), "Test") + 
-  scale_shape_manual(values = c(21, 22, 23, 24), "Sensibility") + 
+  scale_shape_manual(values = c(21, 22, 23, 24), "Susceptibility") + 
   theme(strip.text.y = element_text(angle = 0))
 ggsave(filename = "images/mm_effet-sur-les-balances.png", width = 18, height = 5, dpi = 300)
 ```
